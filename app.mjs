@@ -33,20 +33,19 @@ db.serialize(() => {
     `);
 
   // Create 'ejaculation_data' table
-db.run(`
+  db.run(`
 CREATE TABLE IF NOT EXISTS ejaculation_data (
   date DATE PRIMARY KEY,
   count INT DEFAULT 0
 )
 `);
-// Create 'ejaculation_data' table
-db.run(`
+  // Create 'ejaculation_data' table
+  db.run(`
 CREATE TABLE IF NOT EXISTS masturbation_data (
   date DATE PRIMARY KEY,
   count INT DEFAULT 0
 )
 `);
-
 });
 
 app.use(cors());
@@ -74,55 +73,72 @@ app.get("/delete", (req, res) => {
 
 // GET endpoint to add a record to 'climate' and update 'aggregated_data'
 app.get("/climate/:temperature/:humidity", (req, res) => {
-    const { temperature, humidity } = req.params;
-    const timestamp = new Date().toISOString();
-    console.log("Datapoint received: Temperature: " + temperature + " Humidity: " + humidity);
-  
-    // Insert data into 'climate' table
-    db.run(
-      "INSERT INTO climate (temperature, humidity, timestamp) VALUES (?, ?, ?)",
-      [temperature, humidity, timestamp],
-      (err) => {
-        if (err) {
-          console.error(err.message);
-          return res.status(500).json({ success: false, message: "Error writing to the database." });
-        }
-  
-        const dateOnly = timestamp.split("T")[0];
-  
-        // Calculate the daily average temperature and humidity
-        db.get(
-          "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate WHERE date(timestamp) = ?",
-          [dateOnly],
-          (err, row) => {
-            if (err) {
-              console.error(err.message);
-              return res.status(500).json({ success: false, message: "Error calculating daily averages." });
-            }
-  
-            const avgTemperature = row.avg_temperature || 0;
-            const avgHumidity = row.avg_humidity || 0;
-  
-            // Update or insert into 'aggregated_data' table
-            db.run(
-              "REPLACE INTO aggregated_data (temperature, humidity, date) VALUES (?, ?, ?)",
-              [avgTemperature, avgHumidity, dateOnly],
-              (err) => {
-                if (err) {
-                  console.error(err.message);
-                  return res.status(500).json({ success: false, message: "Error writing to aggregated data." });
-                }
-  
-                res.status(200).json({ success: true, message: "Data written to the database." });
-              }
-            );
-          }
-        );
+  const { temperature, humidity } = req.params;
+  const timestamp = new Date().toISOString();
+  console.log(
+    "Datapoint received: Temperature: " + temperature + " Humidity: " + humidity
+  );
+
+  // Insert data into 'climate' table
+  db.run(
+    "INSERT INTO climate (temperature, humidity, timestamp) VALUES (?, ?, ?)",
+    [temperature, humidity, timestamp],
+    (err) => {
+      if (err) {
+        console.error(err.message);
+        return res
+          .status(500)
+          .json({ success: false, message: "Error writing to the database." });
       }
-    );
-  });
-  
-  
+
+      const dateOnly = timestamp.split("T")[0];
+
+      // Calculate the daily average temperature and humidity
+      db.get(
+        "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate WHERE date(timestamp) = ?",
+        [dateOnly],
+        (err, row) => {
+          if (err) {
+            console.error(err.message);
+            return res
+              .status(500)
+              .json({
+                success: false,
+                message: "Error calculating daily averages.",
+              });
+          }
+
+          const avgTemperature = row.avg_temperature || 0;
+          const avgHumidity = row.avg_humidity || 0;
+
+          // Update or insert into 'aggregated_data' table
+          db.run(
+            "REPLACE INTO aggregated_data (temperature, humidity, date) VALUES (?, ?, ?)",
+            [avgTemperature, avgHumidity, dateOnly],
+            (err) => {
+              if (err) {
+                console.error(err.message);
+                return res
+                  .status(500)
+                  .json({
+                    success: false,
+                    message: "Error writing to aggregated data.",
+                  });
+              }
+
+              res
+                .status(200)
+                .json({
+                  success: true,
+                  message: "Data written to the database.",
+                });
+            }
+          );
+        }
+      );
+    }
+  );
+});
 
 // GET endpoint to retrieve all entries
 app.get("/all", (req, res) => {
@@ -141,29 +157,39 @@ app.get("/all", (req, res) => {
   });
 });
 
-// GET endpoint to retrieve aggregated data
+// GET endpoint to retrieve aggregated data for all days
 app.get("/aggregated/all", (req, res) => {
-  console.log("Aggregated data fetched");
-  db.all("SELECT * FROM aggregated_data ORDER BY date DESC", (err, rows) => {
-    if (err) {
-      console.error(err.message);
-      res
-        .status(500)
-        .json({ success: false, message: "Error reading from the database." });
-    } else {
+  console.log("Aggregated data for all days fetched");
+
+  // Retrieve the average temperature and humidity for all days from 'climate' table
+  db.all(
+    "SELECT date(timestamp) AS date, AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate GROUP BY date",
+    (err, rows) => {
+      if (err) {
+        console.error(err.message);
+        return res
+          .status(500)
+          .json({
+            success: false,
+            message: "Error reading from the database.",
+          });
+      }
+
+      // Format the data and respond
       const formattedData = rows.map((row) => ({
-        temperature: row.temperature,
-        humidity: row.humidity,
-        timestamp: `${row.date}T00:00:00.000Z`, // Assuming date is in the format 'YYYY-MM-DD'
+        temperature: row.avg_temperature || 0,
+        humidity: row.avg_humidity || 0,
+        timestamp: `${row.date}T00:00:00.000Z`,
       }));
 
       res.status(200).json({ success: true, data: formattedData });
     }
-  });
+  );
 });
+
 // GET endpoint to update the count of ejaculations for the current day
 app.get("/updateEjaculationCount", (req, res) => {
-    console.log('added c')
+  console.log("added c");
   const currentDate = new Date().toISOString().split("T")[0]; // Get the current date without the time component
 
   // Check if a record exists for the current date in 'ejaculation_data'
@@ -231,18 +257,17 @@ app.get("/allEjaculationData", (req, res) => {
         .status(500)
         .json({ success: false, message: "Error reading from the database." });
     } else {
-        rows.map((row) => console.log(new Date(row.date)))
+      rows.map((row) => console.log(new Date(row.date)));
       const formattedData = rows.map((row) => ({
         date: new Date(row.date).toString(),
         count: row.count,
       }));
-      console.log(formattedData)
+      console.log(formattedData);
 
       res.status(200).json({ success: true, data: formattedData });
     }
   });
 });
-
 
 app.get("/n/:stackSize", (req, res) => {
   console.log("Custom size fetched: ", req.params.stackSize);
