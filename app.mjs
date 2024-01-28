@@ -23,6 +23,15 @@ db.serialize(() => {
       )
     `);
 
+    // Create 'climate_sensor_2' table
+  db.run(`
+  CREATE TABLE IF NOT EXISTS climate_sensor_2 (
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    temperature INT,
+    humidity INT
+  )
+`);
+
   // Create 'aggregated_data' table
   db.run(`
   CREATE TABLE IF NOT EXISTS aggregated_data (
@@ -140,6 +149,32 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
   );
 });
 
+
+// GET endpoint to add a record to 'climate' and update 'aggregated_data'
+app.get("/climate_sensor_2/:temperature/:humidity", (req, res) => {
+    const { temperature, humidity } = req.params;
+    const timestamp = new Date().toISOString();
+    console.log(
+      "Datapoint received (2): Temperature: " + temperature + " Humidity: " + humidity
+    );
+  
+    // Insert data into 'climate' table
+    db.run(
+      "INSERT INTO climate_sensor_2 (temperature, humidity, timestamp) VALUES (?, ?, ?)",
+      [temperature, humidity, timestamp],
+      (err) => {
+        if (err) {
+          console.error(err.message);
+          return res
+            .status(500)
+            .json({ success: false, message: "Error writing to the database." });
+        }
+      }
+    );
+
+    res.status(200).json({ success: true, message: 'Datapoint received'})
+  });
+
 // GET endpoint to retrieve all entries
 app.get("/all", (req, res) => {
   db.all("SELECT * FROM climate ORDER BY timestamp DESC", (err, rows) => {
@@ -156,6 +191,39 @@ app.get("/all", (req, res) => {
     }
   });
 });
+
+// GET endpoint to retrieve all entries from both sensors separately
+app.get("/all", (req, res) => {
+  console.log("All entries from both sensors fetched separately");
+
+  // Fetch entries from 'climate_sensor_1'
+  db.all("SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC", (err, rowsSensor1) => {
+    if (err) {
+      console.error(err.message);
+      return res.status(500).json({ success: false, message: "Error reading from the database (sensor 1)." });
+    }
+
+    // Fetch entries from 'climate_sensor_2'
+    db.all("SELECT * FROM climate_sensor_2 ORDER BY timestamp DESC", (err, rowsSensor2) => {
+      if (err) {
+        console.error(err.message);
+        return res.status(500).json({ success: false, message: "Error reading from the database (sensor 2)." });
+      }
+
+      const filteredSensor1 = rowsSensor1.filter((row) => row.temperature > 0 && row.humidity < 150);
+      const filteredSensor2 = rowsSensor2.filter((row) => row.temperature > 0 && row.humidity < 150);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          sensor1: filteredSensor1,
+          sensor2: filteredSensor2
+        }
+      });
+    });
+  });
+});
+
 
 // GET endpoint to retrieve aggregated data for all days
 app.get("/aggregated/all", (req, res) => {
@@ -262,12 +330,43 @@ app.get("/allEjaculationData", (req, res) => {
         date: new Date(row.date).toString(),
         count: row.count,
       }));
-      console.log(formattedData);
-
-      res.status(200).json({ success: true, data: formattedData });
+      formattedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())     
+      res.status(200).json({ success: true, data: fillMissingDays(formattedData) });
     }
   });
 });
+
+function fillMissingDays(data) {
+  const filledData = [...data]; // Copy the existing data
+  const lastDate = new Date(data[data.length - 1].date);
+  let currentDate = new Date(lastDate);
+
+  // Increment currentDate by one day to start from the day after the last date in the array
+  currentDate.setDate(currentDate.getDate() + 1);
+
+  const today = new Date(); // Get today's date
+
+  // Iterate over each day between the last day in the array and today
+  while (currentDate <= today) {
+    const dateString = currentDate.toString(); // Convert date to string in the original format
+
+    // Check if there's an existing entry for the current date
+    const existingEntry = filledData.find(entry => entry.date === dateString);
+
+    // If no entry exists for the current date, add a new entry with count 0
+    if (!existingEntry) {
+      filledData.push({ date: dateString, count: 0 });
+    }
+
+    // Move to the next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return filledData;
+}
+
+
+
 
 app.get("/n/:stackSize", (req, res) => {
   console.log("Custom size fetched: ", req.params.stackSize);
@@ -279,24 +378,78 @@ app.get("/n/:stackSize", (req, res) => {
       .json({ success: false, message: "Invalid :stackSize parameter." });
   }
 
+  // Fetch entries from 'climate_sensor_1'
   db.all(
     `SELECT * FROM climate ORDER BY timestamp DESC LIMIT ${stackSize}`,
-    (err, rows) => {
+    (err, rowsSensor1) => {
       if (err) {
         console.error(err.message);
-        res.status(500).json({
+        return res.status(500).json({
           success: false,
-          message: "Error reading from the database.",
+          message: "Error reading from the database (sensor 1).",
         });
-      } else {
-        const filtered = rows.filter(
-          (row) => row.temperature > 0 && row.humidity < 150
-        );
-        res.status(200).json({ success: true, data: filtered });
       }
+
+      // Fetch entries from 'climate_sensor_2'
+      db.all(
+        `SELECT * FROM climate_sensor_2 ORDER BY timestamp DESC LIMIT ${stackSize}`,
+        (err, rowsSensor2) => {
+          if (err) {
+            console.error(err.message);
+            return res.status(500).json({
+              success: false,
+              message: "Error reading from the database (sensor 2).",
+            });
+          }
+
+          const filteredSensor1 = rowsSensor1.filter((entry, index, array) => {
+            if (index === 0) {
+              // Keep the first entry
+              return true;
+            } else {
+              // Check temperature deviation from the previous entry
+              const prevTemperature = array[index - 1].temperature;
+              const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
+          
+              // Check humidity deviation from the previous entry
+              const prevHumidity = array[index - 1].humidity;
+              const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
+          
+              // Check if temperature deviation OR humidity deviation exceeds the thresholds
+              return temperatureDeviation <= 6 && humidityDeviation <= 60;
+            }
+          });
+          const filteredSensor2 = rowsSensor2.filter((entry, index, array) => {
+            if (index === 0) {
+              // Keep the first entry
+              return true;
+            } else {
+              // Check temperature deviation from the previous entry
+              const prevTemperature = array[index - 1].temperature;
+              const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
+          
+              // Check humidity deviation from the previous entry
+              const prevHumidity = array[index - 1].humidity;
+              const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
+          
+              // Check if temperature deviation OR humidity deviation exceeds the thresholds
+              return temperatureDeviation <= 6 && humidityDeviation <= 60;
+            }
+          });
+
+          res.status(200).json({
+            success: true,
+            data: {
+              sensor1: filteredSensor1,
+              sensor2: filteredSensor2
+            }
+          });
+        }
+      );
     }
   );
 });
+
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
