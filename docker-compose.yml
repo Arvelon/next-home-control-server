@@ -1,0 +1,34 @@
+version: '3'
+services:
+  server:
+    image: home-control-server
+    ports:
+      - "5001:5001"
+    networks:
+      - app-network
+    restart: always
+
+
+  nextjs-app:
+    image: next-home-control
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - app-network
+    restart: always
+
+  # ngrok-tunnel:
+  #   image: ngrok-next-home-control
+  #   ports:
+  #     - "4040:4040"
+  #   environment:
+  #     - NODE_ENV=production
+  #   networks:
+  #     - app-network
+  #   restart: always
+
+networks:
+  app-network:
+    driver: bridge

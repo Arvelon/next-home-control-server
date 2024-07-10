@@ -4,6 +4,8 @@ import sqlite3 from "sqlite3";
 import moment from "moment-timezone";
 import cors from "cors";
 
+console.log('Initializing server...')
+
 const app = express();
 const port = 5001;
 const serverTimeZone = "Europe/Brussels"; // Replace with your desired time zone
@@ -14,9 +16,10 @@ const db = new sqlite3.Database("mydatabase.db");
 
 // Create tables if they don't exist
 db.serialize(() => {
-  // Create 'climate' table
+
+  // Create 'climate_sensor_1' table
   db.run(`
-      CREATE TABLE IF NOT EXISTS climate (
+      CREATE TABLE IF NOT EXISTS climate_sensor_1 (
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         temperature INT,
         humidity INT
@@ -31,6 +34,14 @@ db.serialize(() => {
     humidity INT
   )
 `);
+  // Create 'climate_sensor_3' table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS climate_sensor_3 (
+      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      temperature INT,
+      humidity INT
+    )
+  `);
 
   // Create 'aggregated_data' table
   db.run(`
@@ -90,7 +101,7 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
 
   // Insert data into 'climate' table
   db.run(
-    "INSERT INTO climate (temperature, humidity, timestamp) VALUES (?, ?, ?)",
+    "INSERT INTO climate_sensor_1 (temperature, humidity, timestamp) VALUES (?, ?, ?)",
     [temperature, humidity, timestamp],
     (err) => {
       if (err) {
@@ -104,7 +115,7 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
 
       // Calculate the daily average temperature and humidity
       db.get(
-        "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate WHERE date(timestamp) = ?",
+        "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 WHERE date(timestamp) = ?",
         [dateOnly],
         (err, row) => {
           if (err) {
@@ -175,9 +186,36 @@ app.get("/climate_sensor_2/:temperature/:humidity", (req, res) => {
     res.status(200).json({ success: true, message: 'Datapoint received'})
   });
 
+// GET endpoint to add a record to 'climate_sensor_3' and handle response properly
+app.get("/climate_sensor_3_pico/:temperature/:humidity", (req, res) => {
+  const { temperature, humidity } = req.params;
+  const timestamp = new Date().toISOString();
+  console.log(
+    "Datapoint received (3 <pico>): Temperature: " + temperature + " Humidity: " + humidity
+  );
+
+  // Insert data into 'climate_sensor_3' table
+  db.run(
+    "INSERT INTO climate_sensor_3 (temperature, humidity, timestamp) VALUES (?, ?, ?)",
+    [temperature, humidity, timestamp],
+    (err) => {
+      if (err) {
+        console.error(err.message);
+        return res
+          .status(500)
+          .json({ success: false, message: "Error writing to the database." });
+      }
+
+      // Send response after successful insertion
+      res.status(200).json({ success: true, message: 'Datapoint received' });
+    }
+  );
+});
+
+
 // GET endpoint to retrieve all entries
 app.get("/all", (req, res) => {
-  db.all("SELECT * FROM climate ORDER BY timestamp DESC", (err, rows) => {
+  db.all("SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC", (err, rows) => {
     if (err) {
       console.error(err.message);
       res
@@ -231,7 +269,7 @@ app.get("/aggregated/all", (req, res) => {
 
   // Retrieve the average temperature and humidity for all days from 'climate' table
   db.all(
-    "SELECT date(timestamp) AS date, AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate GROUP BY date",
+    "SELECT date(timestamp) AS date, AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 GROUP BY date",
     (err, rows) => {
       if (err) {
         console.error(err.message);
@@ -380,7 +418,7 @@ app.get("/n/:stackSize", (req, res) => {
 
   // Fetch entries from 'climate_sensor_1'
   db.all(
-    `SELECT * FROM climate ORDER BY timestamp DESC LIMIT ${stackSize}`,
+    `SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC LIMIT ${stackSize}`,
     (err, rowsSensor1) => {
       if (err) {
         console.error(err.message);
@@ -402,53 +440,60 @@ app.get("/n/:stackSize", (req, res) => {
             });
           }
 
-          const filteredSensor1 = rowsSensor1.filter((entry, index, array) => {
-            if (index === 0) {
-              // Keep the first entry
-              return true;
-            } else {
-              // Check temperature deviation from the previous entry
-              const prevTemperature = array[index - 1].temperature;
-              const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
-          
-              // Check humidity deviation from the previous entry
-              const prevHumidity = array[index - 1].humidity;
-              const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
-          
-              // Check if temperature deviation OR humidity deviation exceeds the thresholds
-              return temperatureDeviation <= 6 && humidityDeviation <= 60;
-            }
-          });
-          const filteredSensor2 = rowsSensor2.filter((entry, index, array) => {
-            if (index === 0) {
-              // Keep the first entry
-              return true;
-            } else {
-              // Check temperature deviation from the previous entry
-              const prevTemperature = array[index - 1].temperature;
-              const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
-          
-              // Check humidity deviation from the previous entry
-              const prevHumidity = array[index - 1].humidity;
-              const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
-          
-              // Check if temperature deviation OR humidity deviation exceeds the thresholds
-              return temperatureDeviation <= 6 && humidityDeviation <= 60;
-            }
-          });
+          // Fetch entries from 'climate_sensor_3'
+          db.all(
+            `SELECT * FROM climate_sensor_3 ORDER BY timestamp DESC LIMIT ${stackSize}`,
+            (err, rowsSensor3) => {
+              if (err) {
+                console.error(err.message);
+                return res.status(500).json({
+                  success: false,
+                  message: "Error reading from the database (sensor 3).",
+                });
+              }
 
-          res.status(200).json({
-            success: true,
-            data: {
-              sensor1: filteredSensor1,
-              sensor2: filteredSensor2
+              // Filter and process data from each sensor
+              const filteredSensor1 = filterAndProcessData(rowsSensor1);
+              const filteredSensor2 = filterAndProcessData(rowsSensor2);
+              const filteredSensor3 = filterAndProcessData(rowsSensor3);
+
+              res.status(200).json({
+                success: true,
+                data: {
+                  sensor1: filteredSensor1,
+                  sensor2: filteredSensor2,
+                  sensor3: filteredSensor3
+                }
+              });
             }
-          });
+          );
         }
       );
     }
   );
 });
+
+// Function to filter and process data (can be reused)
+function filterAndProcessData(data) {
+  return data.filter((entry, index, array) => {
+    if (index === 0) {
+      // Keep the first entry
+      return true;
+    } else {
+      // Check temperature deviation from the previous entry
+      const prevTemperature = array[index - 1].temperature;
+      const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
+  
+      // Check humidity deviation from the previous entry
+      const prevHumidity = array[index - 1].humidity;
+      const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
+  
+      // Check if temperature deviation OR humidity deviation exceeds the thresholds
+      return temperatureDeviation <= 6 && humidityDeviation <= 60;
+    }
+  });
+}
+
 
 
 app.listen(port, () => {
