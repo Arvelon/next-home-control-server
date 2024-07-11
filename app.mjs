@@ -1,6 +1,6 @@
 // app.mjs
 import express from "express";
-import sqlite3 from "sqlite3";
+import Database from "better-sqlite3"; // Import better-sqlite3
 import moment from "moment-timezone";
 import cors from "cors";
 
@@ -12,86 +12,80 @@ const serverTimeZone = "Europe/Brussels"; // Replace with your desired time zone
 moment.tz.setDefault(serverTimeZone);
 
 // Open SQLite database (create one if it doesn't exist)
-const db = new sqlite3.Database("mydatabase.db");
+const db = new Database("mydatabase.db");
 
 // Create tables if they don't exist
-db.serialize(() => {
+db.exec(`
+  CREATE TABLE IF NOT EXISTS climate_sensor_1 (
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    temperature INT,
+    humidity INT
+  )
+`);
 
-  // Create 'climate_sensor_1' table
-  db.run(`
-      CREATE TABLE IF NOT EXISTS climate_sensor_1 (
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        temperature INT,
-        humidity INT
-      )
-    `);
-
-    // Create 'climate_sensor_2' table
-  db.run(`
+db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_2 (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     temperature INT,
     humidity INT
   )
 `);
-  // Create 'climate_sensor_3' table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS climate_sensor_3 (
-      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      temperature INT,
-      humidity INT
-    )
-  `);
 
-  // Create 'aggregated_data' table
-  db.run(`
+db.exec(`
+  CREATE TABLE IF NOT EXISTS climate_sensor_3 (
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    temperature INT,
+    humidity INT
+  )
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS aggregated_data (
     date TEXT PRIMARY KEY,
     temperature REAL,
     humidity REAL
   )
-    `);
+`);
 
-  // Create 'ejaculation_data' table
-  db.run(`
-CREATE TABLE IF NOT EXISTS ejaculation_data (
-  date DATE PRIMARY KEY,
-  count INT DEFAULT 0
-)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ejaculation_data (
+    date DATE PRIMARY KEY,
+    count INT DEFAULT 0
+  )
 `);
-  // Create 'ejaculation_data' table
-  db.run(`
-CREATE TABLE IF NOT EXISTS masturbation_data (
-  date DATE PRIMARY KEY,
-  count INT DEFAULT 0
-)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS masturbation_data (
+    date DATE PRIMARY KEY,
+    count INT DEFAULT 0
+  )
 `);
-});
 
 app.use(cors());
 app.get("/", (req, res) => {
   res.send("Hello, this is your Express app using ESM!");
 });
 
-// Express endpoint to delete all records from the 'climate' table
+// Express endpoint to delete all records from the 'ejaculation_data' table
 app.get("/delete", (req, res) => {
-  db.run("DELETE FROM ejaculation_data", function (err) {
-    if (err) {
-      console.error(err.message);
-      res.status(500).json({
-        success: false,
-        message: "Error deleting records from the database.",
-      });
-    } else {
-      res.status(200).json({
-        success: true,
-        message: "All records deleted from the database.",
-      });
-    }
-  });
+  try {
+    const stmt = db.prepare("DELETE FROM ejaculation_data");
+    stmt.run();
+    console.log("All records deleted from the 'ejaculation_data' table.");
+    res.status(200).json({
+      success: true,
+      message: "All records deleted from the 'ejaculation_data' table.",
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error deleting records from the database.",
+    });
+  }
 });
 
-// GET endpoint to add a record to 'climate' and update 'aggregated_data'
+// GET endpoint to add a record to 'climate_sensor_1' and update 'aggregated_data'
 app.get("/climate/:temperature/:humidity", (req, res) => {
   const { temperature, humidity } = req.params;
   const timestamp = new Date().toISOString();
@@ -99,94 +93,71 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
     "Datapoint received: Temperature: " + temperature + " Humidity: " + humidity
   );
 
-  // Insert data into 'climate' table
-  db.run(
-    "INSERT INTO climate_sensor_1 (temperature, humidity, timestamp) VALUES (?, ?, ?)",
-    [temperature, humidity, timestamp],
-    (err) => {
-      if (err) {
-        console.error(err.message);
-        return res
-          .status(500)
-          .json({ success: false, message: "Error writing to the database." });
-      }
+  try {
+    // Insert data into 'climate_sensor_1' table
+    const insertStmt = db.prepare(
+      "INSERT INTO climate_sensor_1 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
+    );
+    insertStmt.run(temperature, humidity, timestamp);
+    console.log("Data inserted into 'climate_sensor_1' table.");
 
-      const dateOnly = timestamp.split("T")[0];
+    const dateOnly = timestamp.split("T")[0];
 
-      // Calculate the daily average temperature and humidity
-      db.get(
-        "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 WHERE date(timestamp) = ?",
-        [dateOnly],
-        (err, row) => {
-          if (err) {
-            console.error(err.message);
-            return res
-              .status(500)
-              .json({
-                success: false,
-                message: "Error calculating daily averages.",
-              });
-          }
+    // Calculate the daily average temperature and humidity
+    const avgRow = db.prepare(
+      "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 WHERE date(timestamp) = ?"
+    ).get(dateOnly);
 
-          const avgTemperature = row.avg_temperature || 0;
-          const avgHumidity = row.avg_humidity || 0;
+    const avgTemperature = avgRow.avg_temperature || 0;
+    const avgHumidity = avgRow.avg_humidity || 0;
 
-          // Update or insert into 'aggregated_data' table
-          db.run(
-            "REPLACE INTO aggregated_data (temperature, humidity, date) VALUES (?, ?, ?)",
-            [avgTemperature, avgHumidity, dateOnly],
-            (err) => {
-              if (err) {
-                console.error(err.message);
-                return res
-                  .status(500)
-                  .json({
-                    success: false,
-                    message: "Error writing to aggregated data.",
-                  });
-              }
+    // Update or insert into 'aggregated_data' table
+    const replaceStmt = db.prepare(
+      "REPLACE INTO aggregated_data (temperature, humidity, date) VALUES (?, ?, ?)"
+    );
+    replaceStmt.run(avgTemperature, avgHumidity, dateOnly);
+    console.log("Aggregated data updated in 'aggregated_data' table.");
 
-              res
-                .status(200)
-                .json({
-                  success: true,
-                  message: "Data written to the database.",
-                });
-            }
-          );
-        }
-      );
-    }
-  );
+    res.status(200).json({
+      success: true,
+      message: "Data written to the database.",
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error writing to the database.",
+    });
+  }
 });
 
-
-// GET endpoint to add a record to 'climate' and update 'aggregated_data'
+// Express endpoint to add a record to 'climate_sensor_2'
 app.get("/climate_sensor_2/:temperature/:humidity", (req, res) => {
-    const { temperature, humidity } = req.params;
-    const timestamp = new Date().toISOString();
-    console.log(
-      "Datapoint received (2): Temperature: " + temperature + " Humidity: " + humidity
-    );
-  
-    // Insert data into 'climate' table
-    db.run(
-      "INSERT INTO climate_sensor_2 (temperature, humidity, timestamp) VALUES (?, ?, ?)",
-      [temperature, humidity, timestamp],
-      (err) => {
-        if (err) {
-          console.error(err.message);
-          return res
-            .status(500)
-            .json({ success: false, message: "Error writing to the database." });
-        }
-      }
-    );
+  const { temperature, humidity } = req.params;
+  const timestamp = new Date().toISOString();
+  console.log(
+    "Datapoint received (2): Temperature: " + temperature + " Humidity: " + humidity
+  );
 
-    res.status(200).json({ success: true, message: 'Datapoint received'})
-  });
+  try {
+    // Insert data into 'climate_sensor_2' table
+    const insertStmt = db.prepare(
+      "INSERT INTO climate_sensor_2 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
+    );
+    insertStmt.run(temperature, humidity, timestamp);
+    console.log("Data inserted into 'climate_sensor_2' table.");
 
-// GET endpoint to add a record to 'climate_sensor_3' and handle response properly
+    res.status(200).json({ success: true, message: 'Datapoint received' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error writing to the database.",
+    });
+  }
+});
+
+// Express endpoint to add a record to 'climate_sensor_3'
 app.get("/climate_sensor_3_pico/:temperature/:humidity", (req, res) => {
   const { temperature, humidity } = req.params;
   const timestamp = new Date().toISOString();
@@ -194,308 +165,155 @@ app.get("/climate_sensor_3_pico/:temperature/:humidity", (req, res) => {
     "Datapoint received (3 <pico>): Temperature: " + temperature + " Humidity: " + humidity
   );
 
-  // Insert data into 'climate_sensor_3' table
-  db.run(
-    "INSERT INTO climate_sensor_3 (temperature, humidity, timestamp) VALUES (?, ?, ?)",
-    [temperature, humidity, timestamp],
-    (err) => {
-      if (err) {
-        console.error(err.message);
-        return res
-          .status(500)
-          .json({ success: false, message: "Error writing to the database." });
-      }
+  try {
+    // Insert data into 'climate_sensor_3' table
+    const insertStmt = db.prepare(
+      "INSERT INTO climate_sensor_3 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
+    );
+    insertStmt.run(temperature, humidity, timestamp);
+    console.log("Data inserted into 'climate_sensor_3' table.");
 
-      // Send response after successful insertion
-      res.status(200).json({ success: true, message: 'Datapoint received' });
-    }
-  );
-});
-
-
-// GET endpoint to retrieve all entries
-app.get("/all", (req, res) => {
-  db.all("SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC", (err, rows) => {
-    if (err) {
-      console.error(err.message);
-      res
-        .status(500)
-        .json({ success: false, message: "Error reading from the database." });
-    } else {
-      const filtered = rows.filter(
-        (row) => row.temperature > 0 && row.humidity < 150
-      );
-      res.status(200).json({ success: true, data: filtered });
-    }
-  });
-});
-
-// GET endpoint to retrieve all entries from both sensors separately
-app.get("/all", (req, res) => {
-  console.log("All entries from both sensors fetched separately");
-
-  // Fetch entries from 'climate_sensor_1'
-  db.all("SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC", (err, rowsSensor1) => {
-    if (err) {
-      console.error(err.message);
-      return res.status(500).json({ success: false, message: "Error reading from the database (sensor 1)." });
-    }
-
-    // Fetch entries from 'climate_sensor_2'
-    db.all("SELECT * FROM climate_sensor_2 ORDER BY timestamp DESC", (err, rowsSensor2) => {
-      if (err) {
-        console.error(err.message);
-        return res.status(500).json({ success: false, message: "Error reading from the database (sensor 2)." });
-      }
-
-      const filteredSensor1 = rowsSensor1.filter((row) => row.temperature > 0 && row.humidity < 150);
-      const filteredSensor2 = rowsSensor2.filter((row) => row.temperature > 0 && row.humidity < 150);
-
-      res.status(200).json({
-        success: true,
-        data: {
-          sensor1: filteredSensor1,
-          sensor2: filteredSensor2
-        }
-      });
+    res.status(200).json({ success: true, message: 'Datapoint received' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error writing to the database.",
     });
-  });
+  }
 });
 
+// GET endpoint to retrieve all entries from 'climate_sensor_1' filtered by conditions
+app.get("/all", (req, res) => {
+  console.log("Fetching all entries from 'climate_sensor_1' table.");
+
+  db.transaction(() => {
+    const rows = db.prepare("SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC").all();
+    const filtered = rows.filter((row) => row.temperature > 0 && row.humidity < 150);
+    res.status(200).json({ success: true, data: filtered });
+  })();
+});
 
 // GET endpoint to retrieve aggregated data for all days
 app.get("/aggregated/all", (req, res) => {
-  console.log("Aggregated data for all days fetched");
+  console.log("Fetching aggregated data for all days.");
 
-  // Retrieve the average temperature and humidity for all days from 'climate' table
-  db.all(
-    "SELECT date(timestamp) AS date, AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 GROUP BY date",
-    (err, rows) => {
-      if (err) {
-        console.error(err.message);
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message: "Error reading from the database.",
-          });
-      }
-
-      // Format the data and respond
-      const formattedData = rows.map((row) => ({
-        temperature: row.avg_temperature || 0,
-        humidity: row.avg_humidity || 0,
-        timestamp: `${row.date}T00:00:00.000Z`,
-      }));
-
-      res.status(200).json({ success: true, data: formattedData });
-    }
-  );
+  db.transaction(() => {
+    const rows = db.prepare(
+      "SELECT date(timestamp) AS date, AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 GROUP BY date"
+    ).all();
+    const formattedData = rows.map((row) => ({
+      temperature: row.avg_temperature || 0,
+      humidity: row.avg_humidity || 0,
+      timestamp: `${row.date}T00:00:00.000Z`,
+    }));
+    res.status(200).json({ success: true, data: formattedData });
+  })();
 });
 
 // GET endpoint to update the count of ejaculations for the current day
 app.get("/updateEjaculationCount", (req, res) => {
-  console.log("added c");
+  console.log("Updating ejaculation count for the current day.");
   const currentDate = new Date().toISOString().split("T")[0]; // Get the current date without the time component
 
-  // Check if a record exists for the current date in 'ejaculation_data'
-  db.get(
-    "SELECT * FROM ejaculation_data WHERE date = ?",
-    [currentDate],
-    (err, row) => {
-      if (err) {
-        console.error(err.message);
-        return res
-          .status(500)
-          .json({ success: false, message: "Error querying the database." });
-      }
+  try {
+    db.transaction(() => {
+      // Check if a record exists for the current date in 'ejaculation_data'
+      const row = db.prepare("SELECT * FROM ejaculation_data WHERE date = ?").get(currentDate);
 
       if (row) {
-        console.log(row);
         // If a record exists for the day, update the count
         const newCount = row.count + 1;
-        db.run(
-          "UPDATE ejaculation_data SET count = ? WHERE date = ?",
-          [newCount, currentDate],
-          (err) => {
-            if (err) {
-              console.error(err.message);
-              return res.status(500).json({
-                success: false,
-                message: "Error updating ejaculation count.",
-              });
-            }
-
-            res
-              .status(200)
-              .json({ success: true, message: "Ejaculation count updated." });
-          }
-        );
+        db.prepare("UPDATE ejaculation_data SET count = ? WHERE date = ?").run(newCount, currentDate);
       } else {
         // If no record exists for the day, insert a new record
-        db.run(
-          "INSERT INTO ejaculation_data (date, count) VALUES (?, 1)",
-          [currentDate],
-          (err) => {
-            if (err) {
-              console.error(err.message);
-              return res.status(500).json({
-                success: false,
-                message: "Error inserting ejaculation data.",
-              });
-            }
-
-            res
-              .status(200)
-              .json({ success: true, message: "Ejaculation count updated." });
-          }
-        );
+        db.prepare("INSERT INTO ejaculation_data (date, count) VALUES (?, 1)").run(currentDate);
       }
-    }
-  );
+
+      res.status(200).json({ success: true, message: "Ejaculation count updated." });
+    })();
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error updating ejaculation count.",
+    });
+  }
 });
+
 // GET endpoint to retrieve all ejaculation data
 app.get("/allEjaculationData", (req, res) => {
-  db.all("SELECT * FROM ejaculation_data ORDER BY date DESC", (err, rows) => {
-    if (err) {
-      console.error(err.message);
-      res
-        .status(500)
-        .json({ success: false, message: "Error reading from the database." });
-    } else {
-      rows.map((row) => console.log(new Date(row.date)));
-      const formattedData = rows.map((row) => ({
-        date: new Date(row.date).toString(),
-        count: row.count,
-      }));
-      formattedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())     
-      res.status(200).json({ success: true, data: fillMissingDays(formattedData) });
-    }
-  });
+  console.log("Fetching all ejaculation data.");
+
+  try {
+    const rows = db.prepare("SELECT * FROM ejaculation_data ORDER BY date DESC").all();
+    const formattedData = rows.map((row) => ({
+      date: new Date(row.date).toString(),
+      count: row.count,
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    res.status(200).json({ success: true, data: formattedData });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+     message: "Error fetching ejaculation data.",
+    });
+  }
 });
 
-function fillMissingDays(data) {
-  const filledData = [...data]; // Copy the existing data
-  const lastDate = new Date(data[data.length - 1].date);
-  let currentDate = new Date(lastDate);
+// GET endpoint to update the count of masturbation for the current day
+app.get("/updateMasturbationCount", (req, res) => {
+  console.log("Updating masturbation count for the current day.");
+  const currentDate = new Date().toISOString().split("T")[0]; // Get the current date without the time component
 
-  // Increment currentDate by one day to start from the day after the last date in the array
-  currentDate.setDate(currentDate.getDate() + 1);
+  try {
+    db.transaction(() => {
+      // Check if a record exists for the current date in 'masturbation_data'
+      const row = db.prepare("SELECT * FROM masturbation_data WHERE date = ?").get(currentDate);
 
-  const today = new Date(); // Get today's date
-
-  // Iterate over each day between the last day in the array and today
-  while (currentDate <= today) {
-    const dateString = currentDate.toString(); // Convert date to string in the original format
-
-    // Check if there's an existing entry for the current date
-    const existingEntry = filledData.find(entry => entry.date === dateString);
-
-    // If no entry exists for the current date, add a new entry with count 0
-    if (!existingEntry) {
-      filledData.push({ date: dateString, count: 0 });
-    }
-
-    // Move to the next day
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  return filledData;
-}
-
-
-
-
-app.get("/n/:stackSize", (req, res) => {
-  console.log("Custom size fetched: ", req.params.stackSize);
-  const stackSize = parseInt(req.params.stackSize, 10); // Parse the stackSize as an integer
-
-  if (isNaN(stackSize) || stackSize <= 0) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Invalid :stackSize parameter." });
-  }
-
-  // Fetch entries from 'climate_sensor_1'
-  db.all(
-    `SELECT * FROM climate_sensor_1 ORDER BY timestamp DESC LIMIT ${stackSize}`,
-    (err, rowsSensor1) => {
-      if (err) {
-        console.error(err.message);
-        return res.status(500).json({
-          success: false,
-          message: "Error reading from the database (sensor 1).",
-        });
+      if (row) {
+        // If a record exists for the day, update the count
+        const newCount = row.count + 1;
+        db.prepare("UPDATE masturbation_data SET count = ? WHERE date = ?").run(newCount, currentDate);
+      } else {
+        // If no record exists for the day, insert a new record
+        db.prepare("INSERT INTO masturbation_data (date, count) VALUES (?, 1)").run(currentDate);
       }
 
-      // Fetch entries from 'climate_sensor_2'
-      db.all(
-        `SELECT * FROM climate_sensor_2 ORDER BY timestamp DESC LIMIT ${stackSize}`,
-        (err, rowsSensor2) => {
-          if (err) {
-            console.error(err.message);
-            return res.status(500).json({
-              success: false,
-              message: "Error reading from the database (sensor 2).",
-            });
-          }
-
-          // Fetch entries from 'climate_sensor_3'
-          db.all(
-            `SELECT * FROM climate_sensor_3 ORDER BY timestamp DESC LIMIT ${stackSize}`,
-            (err, rowsSensor3) => {
-              if (err) {
-                console.error(err.message);
-                return res.status(500).json({
-                  success: false,
-                  message: "Error reading from the database (sensor 3).",
-                });
-              }
-
-              // Filter and process data from each sensor
-              const filteredSensor1 = filterAndProcessData(rowsSensor1);
-              const filteredSensor2 = filterAndProcessData(rowsSensor2);
-              const filteredSensor3 = filterAndProcessData(rowsSensor3);
-
-              res.status(200).json({
-                success: true,
-                data: {
-                  sensor1: filteredSensor1,
-                  sensor2: filteredSensor2,
-                  sensor3: filteredSensor3
-                }
-              });
-            }
-          );
-        }
-      );
-    }
-  );
+      res.status(200).json({ success: true, message: "Masturbation count updated." });
+    })();
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error updating masturbation count.",
+    });
+  }
 });
 
-// Function to filter and process data (can be reused)
-function filterAndProcessData(data) {
-  return data.filter((entry, index, array) => {
-    if (index === 0) {
-      // Keep the first entry
-      return true;
-    } else {
-      // Check temperature deviation from the previous entry
-      const prevTemperature = array[index - 1].temperature;
-      const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
-  
-      // Check humidity deviation from the previous entry
-      const prevHumidity = array[index - 1].humidity;
-      const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
-  
-      // Check if temperature deviation OR humidity deviation exceeds the thresholds
-      return temperatureDeviation <= 6 && humidityDeviation <= 60;
-    }
-  });
-}
+// GET endpoint to retrieve all masturbation data
+app.get("/allMasturbationData", (req, res) => {
+  console.log("Fetching all masturbation data.");
 
+  try {
+    const rows = db.prepare("SELECT * FROM masturbation_data ORDER BY date DESC").all();
+    const formattedData = rows.map((row) => ({
+      date: new Date(row.date).toString(),
+      count: row.count,
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    res.status(200).json({ success: true, data: formattedData });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching masturbation data.",
+    });
+  }
+});
 
+// Start the server
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
