@@ -3,6 +3,7 @@ import express from "express";
 import sqlite3 from "better-sqlite3"; // Using better-sqlite3 for improved SQLite handling
 import moment from "moment-timezone";
 import cors from "cors";
+import { subMinutes } from "date-fns";
 
 console.log('Initializing server...')
 
@@ -265,17 +266,17 @@ app.get("/n/:stackSize", (req, res) => {
 
 // Express endpoint to retrieve records since a provided UNIX timestamp from all sensors
 // Express endpoint to retrieve records since a provided UNIX timestamp from all sensors
-app.get("/since/:sinceTimestamp", (req, res) => {
-  const { sinceTimestamp } = req.params;
+app.get("/ago/:minutesAgo", (req, res) => {
+  const { minutesAgo } = req.params;
 
   // Validate sinceTimestamp as a valid UNIX timestamp (assuming it's in seconds)
-  if (isNaN(sinceTimestamp) || sinceTimestamp <= 0) {
-    return res.status(400).json({ success: false, message: "Invalid :sinceTimestamp parameter." });
+  if (isNaN(minutesAgo) || minutesAgo <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid :minutesAgo parameter." });
   }
 
   try {
-    const sinceDate = new Date(parseInt(sinceTimestamp)).toISOString()
-    console.log(sinceTimestamp);
+    const sinceDate = subMinutes(new Date(), parseInt(minutesAgo)).toISOString()
+    console.log(new Date());
     console.log(sinceDate);
     // Query to fetch records since the provided timestamp for each sensor table
     const sensor1Entries = db.prepare(`SELECT * FROM climate_sensor_1 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
@@ -288,7 +289,7 @@ app.get("/since/:sinceTimestamp", (req, res) => {
     const filteredSensor3 = filterAndProcessData(sensor3Entries);
 
     // Paginate results if necessary
-    const maxResults = 3; // Define a max number of results to return
+    const maxResults = 1440; // Define a max number of results to return
     const resultData = {
       sensor1: filteredSensor1.slice(0, maxResults),
       sensor2: filteredSensor2.slice(0, maxResults),
