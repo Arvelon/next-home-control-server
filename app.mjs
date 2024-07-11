@@ -13,20 +13,21 @@ const serverTimeZone = "Europe/Brussels"; // Replace with your desired time zone
 moment.tz.setDefault(serverTimeZone);
 
 // Open SQLite database (create one if it doesn't exist)
-const db = sqlite3("mydatabase.db", { verbose: console.log });
+const db = sqlite3("v2.db", { verbose: console.log });
 
 // Create tables if they don't exist
 db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_1 (
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    timestamp INTEGER DEFAULT (strftime('%s','now')),
     temperature INT,
     humidity INT
   )
 `);
 
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_2 (
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    timestamp INTEGER DEFAULT (strftime('%s','now')),
     temperature INT,
     humidity INT
   )
@@ -34,7 +35,7 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_3 (
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    timestamp INTEGER DEFAULT (strftime('%s','now')),
     temperature INT,
     humidity INT
   )
@@ -83,8 +84,8 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
 
   try {
     db.prepare(
-      "INSERT INTO climate_sensor_1 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
-    ).run(temperature, humidity, timestamp);
+      "INSERT INTO climate_sensor_1 (temperature, humidity) VALUES (?, ?)"
+    ).run(temperature, humidity);
 
     const dateOnly = timestamp.split("T")[0];
 
