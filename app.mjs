@@ -263,6 +263,44 @@ app.get("/n/:stackSize", (req, res) => {
   }
 });
 
+// Express endpoint to retrieve records since a provided UNIX timestamp from all sensors
+app.get("/since/:sinceTimestamp", (req, res) => {
+  const { sinceTimestamp } = req.params;
+
+  // Validate sinceTimestamp as a valid UNIX timestamp (assuming it's in seconds)
+  if (isNaN(sinceTimestamp) || sinceTimestamp <= 0) {
+    return res.status(400).json({ success: false, message: "Invalid :sinceTimestamp parameter." });
+  }
+
+  try {
+    const sinceDate = new Date(sinceTimestamp * 1000).toISOString(); // Convert UNIX timestamp to ISO string
+
+    // Query to fetch records since the provided timestamp for each sensor table
+    const sensor1Entries = db.prepare(`SELECT * FROM climate_sensor_1 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
+    const sensor2Entries = db.prepare(`SELECT * FROM climate_sensor_2 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
+    const sensor3Entries = db.prepare(`SELECT * FROM climate_sensor_3 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
+
+    // Process and filter data if necessary
+    const filteredSensor1 = filterAndProcessData(sensor1Entries);
+    const filteredSensor2 = filterAndProcessData(sensor2Entries);
+    const filteredSensor3 = filterAndProcessData(sensor3Entries);
+
+    // Respond with the filtered data
+    res.status(200).json({
+      success: true,
+      data: {
+        sensor1: filteredSensor1,
+        sensor2: filteredSensor2,
+        sensor3: filteredSensor3
+      }
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ success: false, message: "Error reading from the database." });
+  }
+});
+
+
 // Function to filter and process data (can be reused)
 function filterAndProcessData(data) {
   return data.filter((entry, index, array) => {
