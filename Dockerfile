@@ -1,8 +1,8 @@
-FROM node:20
+FROM node:20-alpine
 WORKDIR /usr/src/app
 
 # Install git if needed
-RUN apt-get update && apt-get install -y git
+RUN apk update && apk add --no-cache git
 
 # Clone the repository
 RUN git clone https://github.com/Arvelon/next-home-control-server.git .
