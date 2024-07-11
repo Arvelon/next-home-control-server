@@ -264,6 +264,7 @@ app.get("/n/:stackSize", (req, res) => {
 });
 
 // Express endpoint to retrieve records since a provided UNIX timestamp from all sensors
+// Express endpoint to retrieve records since a provided UNIX timestamp from all sensors
 app.get("/since/:sinceTimestamp", (req, res) => {
   const { sinceTimestamp } = req.params;
 
@@ -273,26 +274,31 @@ app.get("/since/:sinceTimestamp", (req, res) => {
   }
 
   try {
-    const sinceDate = new Date(sinceTimestamp * 1000).toISOString(); // Convert UNIX timestamp to ISO string
-
+    const sinceDate = new Date(parseInt(sinceTimestamp)).toISOString()
+    console.log(sinceTimestamp);
+    console.log(sinceDate);
     // Query to fetch records since the provided timestamp for each sensor table
     const sensor1Entries = db.prepare(`SELECT * FROM climate_sensor_1 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
     const sensor2Entries = db.prepare(`SELECT * FROM climate_sensor_2 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
     const sensor3Entries = db.prepare(`SELECT * FROM climate_sensor_3 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
 
-    // Process and filter data if necessary
+    // Process and filter data
     const filteredSensor1 = filterAndProcessData(sensor1Entries);
     const filteredSensor2 = filterAndProcessData(sensor2Entries);
     const filteredSensor3 = filterAndProcessData(sensor3Entries);
 
+    // Paginate results if necessary
+    const maxResults = 3; // Define a max number of results to return
+    const resultData = {
+      sensor1: filteredSensor1.slice(0, maxResults),
+      sensor2: filteredSensor2.slice(0, maxResults),
+      sensor3: filteredSensor3.slice(0, maxResults)
+    };
+
     // Respond with the filtered data
     res.status(200).json({
       success: true,
-      data: {
-        sensor1: filteredSensor1,
-        sensor2: filteredSensor2,
-        sensor3: filteredSensor3
-      }
+      data: resultData
     });
   } catch (err) {
     console.error(err.message);
@@ -300,17 +306,18 @@ app.get("/since/:sinceTimestamp", (req, res) => {
   }
 });
 
-
-// Function to filter and process data (can be reused)
+// Function to filter and process data (assumed to be defined elsewhere)
 function filterAndProcessData(data) {
   return data.filter((entry, index, array) => {
     if (index === 0) {
-      return true; // Keep the first entry
+      // Keep the first entry
+      return true;
     } else {
-      // Check temperature and humidity deviation from the previous entry
+      // Check temperature deviation from the previous entry
       const prevTemperature = array[index - 1].temperature;
       const temperatureDeviation = Math.abs(entry.temperature - prevTemperature);
-      
+
+      // Check humidity deviation from the previous entry
       const prevHumidity = array[index - 1].humidity;
       const humidityDeviation = Math.abs(entry.humidity - prevHumidity);
 
@@ -319,6 +326,8 @@ function filterAndProcessData(data) {
     }
   });
 }
+
+
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
