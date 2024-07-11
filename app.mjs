@@ -287,7 +287,9 @@ app.get("/ago/:minutesAgo", (req, res) => {
     const filteredSensor1 = filterAndProcessData(sensor1Entries);
     const filteredSensor2 = filterAndProcessData(sensor2Entries);
     const filteredSensor3 = filterAndProcessData(sensor3Entries);
+    console.log(sensor1Entries.length, sensor2Entries.length, sensor3Entries.length)
 
+    console.log(filteredSensor1.length, filteredSensor2.length, filteredSensor3.length);
     // Paginate results if necessary
     const maxResults = 1440; // Define a max number of results to return
     const resultData = {
