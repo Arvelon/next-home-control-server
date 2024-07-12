@@ -18,16 +18,15 @@ const db = sqlite3("v2.db", { verbose: console.log });
 // Create tables if they don't exist
 db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_1 (
-    timestamp INTEGER DEFAULT (strftime('%s','now')),
+    timestamp BIGINT,
     temperature INT,
     humidity INT
   )
 `);
 
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_2 (
-    timestamp INTEGER DEFAULT (strftime('%s','now')),
+    timestamp BIGINT,
     temperature INT,
     humidity INT
   )
@@ -35,11 +34,12 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS climate_sensor_3 (
-    timestamp INTEGER DEFAULT (strftime('%s','now')),
+    timestamp BIGINT,
     temperature INT,
     humidity INT
   )
 `);
+
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS aggregated_data (
@@ -79,28 +79,28 @@ app.get("/delete", (req, res) => {
 // Express endpoint to add a record to 'climate_sensor_1' and update 'aggregated_data'
 app.get("/climate/:temperature/:humidity", (req, res) => {
   const { temperature, humidity } = req.params;
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date().getTime();
   console.log(`Datapoint received: Temperature: ${temperature}, Humidity: ${humidity}`);
 
   try {
     db.prepare(
-      "INSERT INTO climate_sensor_1 (temperature, humidity) VALUES (?, ?)"
-    ).run(temperature, humidity);
+      "INSERT INTO climate_sensor_1 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
+    ).run(temperature, humidity, timestamp);
 
-    const dateOnly = timestamp.split("T")[0];
+    // const dateOnly = timestamp.split("T")[0];
 
-    // Calculate the daily average temperature and humidity
-    const { avg_temperature, avg_humidity } = db.prepare(
-      "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 WHERE date(timestamp) = ?"
-    ).get(dateOnly);
+    // // Calculate the daily average temperature and humidity
+    // const { avg_temperature, avg_humidity } = db.prepare(
+    //   "SELECT AVG(temperature) AS avg_temperature, AVG(humidity) AS avg_humidity FROM climate_sensor_1 WHERE date(timestamp) = ?"
+    // ).get(dateOnly);
 
-    const avgTemperature = avg_temperature || 0;
-    const avgHumidity = avg_humidity || 0;
+    // const avgTemperature = avg_temperature || 0;
+    // const avgHumidity = avg_humidity || 0;
 
-    // Update or insert into 'aggregated_data' table
-    db.prepare(
-      "REPLACE INTO aggregated_data (temperature, humidity, date) VALUES (?, ?, ?)"
-    ).run(avgTemperature, avgHumidity, dateOnly);
+    // // Update or insert into 'aggregated_data' table
+    // db.prepare(
+    //   "REPLACE INTO aggregated_data (temperature, humidity, date) VALUES (?, ?, ?)"
+    // ).run(avgTemperature, avgHumidity, dateOnly);
 
     res.status(200).json({ success: true, message: "Data written to the database." });
   } catch (err) {
@@ -112,7 +112,7 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
 // Express endpoint to add a record to 'climate_sensor_2'
 app.get("/climate_sensor_2/:temperature/:humidity", (req, res) => {
   const { temperature, humidity } = req.params;
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date().getTime();
   console.log(`Datapoint received (2): Temperature: ${temperature}, Humidity: ${humidity}`);
 
   try {
@@ -130,7 +130,7 @@ app.get("/climate_sensor_2/:temperature/:humidity", (req, res) => {
 // Express endpoint to add a record to 'climate_sensor_3'
 app.get("/climate_sensor_3_pico/:temperature/:humidity", (req, res) => {
   const { temperature, humidity } = req.params;
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date().getTime();
   console.log(`Datapoint received (3 <pico>): Temperature: ${temperature}, Humidity: ${humidity}`);
 
   try {
@@ -276,8 +276,8 @@ app.get("/ago/:minutesAgo", (req, res) => {
   }
 
   try {
-    const sinceDate = subMinutes(new Date(), parseInt(minutesAgo)).toISOString()
-    console.log(new Date());
+    const sinceDate = subMinutes(new Date(), parseInt(minutesAgo)).getTime()
+    console.log(new Date().getTime());
     console.log(sinceDate);
     // Query to fetch records since the provided timestamp for each sensor table
     const sensor1Entries = db.prepare(`SELECT * FROM climate_sensor_1 WHERE timestamp >= ? ORDER BY timestamp DESC`).all(sinceDate);
