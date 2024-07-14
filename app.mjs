@@ -417,6 +417,46 @@ app.get("/ago/:minutesAgo", (req, res) => {
   }
 });
 
+app.get("/stream/:namespace/:minutesAgo", (req, res) => {
+  const { minutesAgo, namespace } = req.params;
+
+  // Validate sinceTimestamp as a valid UNIX timestamp (assuming it's in seconds)
+  if (isNaN(minutesAgo) || minutesAgo <= 0) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid :minutesAgo parameter." });
+  }
+
+  try {
+    const sinceDate = subMinutes(new Date(), parseInt(minutesAgo)).getTime();
+    // Query to fetch records since the provided timestamp for each sensor table
+    const entries = db
+      .prepare(
+        `SELECT * FROM climate_sensor_1 WHERE timestamp >= ? ORDER BY timestamp DESC`
+      )
+      .all(sinceDate);
+
+    // Process and filter data
+    const filteredEntries = filterAndProcessData(entries);
+    console.log(entries.length);
+
+    // Paginate results if necessary
+    const maxResults = 1440; // Define a max number of results to return
+    const resultData = filteredEntries.slice(0, maxResults);
+
+    // Respond with the filtered data
+    res.status(200).json({
+      success: true,
+      data: resultData,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res
+      .status(500)
+      .json({ success: false, message: "Error reading from the database." });
+  }
+});
+
 // Function to filter and process data (assumed to be defined elsewhere)
 function filterAndProcessData(data) {
   return data.filter((entry, index, array) => {
