@@ -432,7 +432,7 @@ app.get("/stream/:namespace/:minutesAgo", (req, res) => {
     // Query to fetch records since the provided timestamp for each sensor table
     const entries = db
       .prepare(
-        `SELECT * FROM climate_sensor_1 WHERE timestamp >= ? ORDER BY timestamp DESC`
+        `SELECT * FROM ${namespace} WHERE timestamp >= ? ORDER BY timestamp DESC`
       )
       .all(sinceDate);
 
