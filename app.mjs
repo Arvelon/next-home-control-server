@@ -13,7 +13,9 @@ const serverTimeZone = "Europe/Brussels"; // Replace with your desired time zone
 moment.tz.setDefault(serverTimeZone);
 
 // Open SQLite database (create one if it doesn't exist)
-const db = sqlite3("v2.db", { verbose: console.log });
+const db = sqlite3("/usr/src/app/backups/sqlite/v2.db", {
+  verbose: console.log,
+});
 
 // Create tables if they don't exist
 db.exec(`
