@@ -12,10 +12,14 @@ const port = 5001;
 const serverTimeZone = "Europe/Brussels"; // Replace with your desired time zone
 moment.tz.setDefault(serverTimeZone);
 
+const DB_Path = "/usr/src/app/backups/sqlite/v2.db";
+
 // Open SQLite database (create one if it doesn't exist)
-const db = sqlite3("/usr/src/app/backups/sqlite/v2.db", {
+const db = sqlite3(DB_Path, {
   verbose: console.log,
 });
+
+console.log("DB_Path >", DB_Path);
 
 // Create tables if they don't exist
 db.exec(`
