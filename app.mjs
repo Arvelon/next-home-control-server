@@ -166,6 +166,37 @@ app.get("/climate_sensor_3_pico/:temperature/:humidity", (req, res) => {
   }
 });
 
+// Dynamic injection endpoint
+app.get("/dynamic-injection/:device/:temperature/:humidity", (req, res) => {
+  const { temperature, humidity, device } = req.params;
+  const timestamp = new Date().getTime();
+  console.log(
+    `Datapoint received (${device}): Temperature: ${temperature}, Humidity: ${humidity}`
+  );
+
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ${device} (
+        timestamp BIGINT,
+        temperature INT,
+        humidity INT
+      )
+    `);
+    db.prepare(
+      "INSERT INTO " +
+        device +
+        " (temperature, humidity, timestamp) VALUES (?, ?, ?)"
+    ).run(temperature, humidity, timestamp);
+
+    res.status(200).json({ success: true, message: "Datapoint received" });
+  } catch (err) {
+    console.error(err.message);
+    res
+      .status(500)
+      .json({ success: false, message: "Error writing to the database." });
+  }
+});
+
 // Express endpoint to retrieve all entries from 'climate_sensor_1'
 app.get("/allSensor1Entries", (req, res) => {
   try {
