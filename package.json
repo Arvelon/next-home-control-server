@@ -17,6 +17,7 @@
     "date-fns": "^3.6.0",
     "express": "^4.18.2",
     "moment-timezone": "^0.5.44",
+    "socket.io": "^4.7.5",
     "sqlite": "^5.1.1"
   }
 }

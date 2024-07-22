@@ -4,6 +4,8 @@ import sqlite3 from "better-sqlite3"; // Using better-sqlite3 for improved SQLit
 import moment from "moment-timezone";
 import cors from "cors";
 import { subMinutes } from "date-fns";
+import http from "http"; // Import the http module
+import { Server } from "socket.io";
 
 console.log("Initializing server...");
 
@@ -12,11 +14,30 @@ const port = 5001;
 const serverTimeZone = "Europe/Brussels"; // Replace with your desired time zone
 moment.tz.setDefault(serverTimeZone);
 
+// Create an HTTP server
+const server = http.createServer(app);
+
+// Attach Socket.IO to the HTTP server
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Allow all origins for testing purposes; use specific origins in production
+    methods: ["GET", "POST"],
+  },
+});
 const DB_Path = "/usr/src/app/backups/sqlite/v2.db";
 
 // Open SQLite database (create one if it doesn't exist)
 const db = sqlite3(DB_Path, {
   verbose: console.log,
+});
+// const db = sqlite3("mydatabase.db", { verbose: console.log });
+
+io.on("connection", (socket) => {
+  console.log("a user connected");
+
+  socket.on("disconnect", () => {
+    console.log("user disconnected");
+  });
 });
 
 console.log("DB_Path >", DB_Path);
@@ -99,7 +120,14 @@ app.get("/climate/:temperature/:humidity", (req, res) => {
     db.prepare(
       "INSERT INTO climate_sensor_1 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
     ).run(temperature, humidity, timestamp);
-
+    io.emit("sensor:climate_sensor_1", {
+      device: "climate_sensor_1",
+      parameter: {
+        temperature: temperature,
+        humidity: humidity,
+        timestamp: timestamp,
+      },
+    });
     const dateOnly = new Date(timestamp).split("T")[0];
 
     // Calculate the daily average temperature and humidity
@@ -141,6 +169,15 @@ app.get("/climate_sensor_2/:temperature/:humidity", (req, res) => {
       "INSERT INTO climate_sensor_2 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
     ).run(temperature, humidity, timestamp);
 
+    io.emit("sensor:climate_sensor_2", {
+      device: "climate_sensor_2",
+      parameter: {
+        temperature: temperature,
+        humidity: humidity,
+        timestamp: timestamp,
+      },
+    });
+
     res.status(200).json({ success: true, message: "Datapoint received" });
   } catch (err) {
     console.error(err.message);
@@ -162,7 +199,14 @@ app.get("/climate_sensor_3_pico/:temperature/:humidity", (req, res) => {
     db.prepare(
       "INSERT INTO climate_sensor_3 (temperature, humidity, timestamp) VALUES (?, ?, ?)"
     ).run(temperature, humidity, timestamp);
-
+    io.emit("sensor:climate_sensor_3", {
+      device: "climate_sensor_3",
+      parameter: {
+        temperature: temperature,
+        humidity: humidity,
+        timestamp: timestamp,
+      },
+    });
     res.status(200).json({ success: true, message: "Datapoint received" });
   } catch (err) {
     console.error(err.message);
@@ -177,7 +221,7 @@ app.get("/dynamic-injection/:device/:temperature/:humidity", (req, res) => {
   const { temperature, humidity, device } = req.params;
   const timestamp = new Date().getTime();
   console.log(
-    `Datapoint received (${device}): Temperature: ${temperature}, Humidity: ${humidity}`
+    `XX Datapoint received (${device}): Temperature: ${temperature}, Humidity: ${humidity}`
   );
 
   try {
@@ -193,6 +237,15 @@ app.get("/dynamic-injection/:device/:temperature/:humidity", (req, res) => {
         device +
         " (temperature, humidity, timestamp) VALUES (?, ?, ?)"
     ).run(temperature, humidity, timestamp);
+
+    io.emit("sensor:" + device, {
+      device: device,
+      parameter: {
+        temperature: temperature,
+        humidity: humidity,
+        timestamp: timestamp,
+      },
+    });
 
     res.status(200).json({ success: true, message: "Datapoint received" });
   } catch (err) {
@@ -497,6 +550,7 @@ app.get("/stream/:namespace/:minutesAgo", (req, res) => {
 // Function to filter and process data (assumed to be defined elsewhere)
 function filterAndProcessData(data) {
   return data.filter((entry, index, array) => {
+    console.log(new Date(entry.timestamp));
     if (index === 0) {
       // Keep the first entry
       return true;
@@ -517,6 +571,6 @@ function filterAndProcessData(data) {
   });
 }
 
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
