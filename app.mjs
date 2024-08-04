@@ -547,6 +547,33 @@ app.get("/stream/:namespace/:minutesAgo", (req, res) => {
   }
 });
 
+app.get("/hassio/device/:namespace", (req, res) => {
+  const { namespace } = req.params;
+
+  try {
+    // Query to fetch the latest record from the specified namespace
+    const entry = db
+      .prepare(`SELECT * FROM ${namespace} ORDER BY timestamp DESC LIMIT 1`)
+      .get();
+
+    // Check if we received a result
+    if (entry) {
+      // Respond with the latest entry
+      res.status(200).json({
+        success: true,
+        data: entry,
+      });
+    } else {
+      res.status(404).json({ success: false, message: "No data found." });
+    }
+  } catch (err) {
+    console.error(err.message);
+    res
+      .status(500)
+      .json({ success: false, message: "Error reading from the database." });
+  }
+});
+
 // Function to filter and process data (assumed to be defined elsewhere)
 function filterAndProcessData(data) {
   return data.filter((entry, index, array) => {
