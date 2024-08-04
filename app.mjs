@@ -558,10 +558,17 @@ app.get("/hassio/device/:namespace", (req, res) => {
 
     // Check if we received a result
     if (entry) {
-      // Respond with the latest entry
+      // Round humidity and temperature to one decimal place
+      const roundedEntry = {
+        ...entry,
+        humidity: Math.floor(entry.humidity * 10) / 10,
+        temperature: Math.floor(entry.temperature * 10) / 10,
+      };
+
+      // Respond with the rounded entry
       res.status(200).json({
         success: true,
-        data: entry,
+        data: roundedEntry,
       });
     } else {
       res.status(404).json({ success: false, message: "No data found." });
